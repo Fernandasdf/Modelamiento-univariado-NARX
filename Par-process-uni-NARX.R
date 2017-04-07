@@ -1,4 +1,96 @@
 library(e1071)
+inverse.step.test <- function(
+  model,
+  inverse.step.lags,
+  lag
+){
+  x <- inverse.step.lags$folded.signal["MABP"]
+  y <- inverse.step.lags$folded.signal["CBFV"]
+  
+  mean.cbfv <- mean(y[,])
+  
+  abp.step.signal <- data.frame(
+    MABP = x,
+    CBFV = round(mean.cbfv,4)
+  )
+  
+  response.ARX.model <- NULL
+  step.response <- NULL
+  
+  lag.abp.step <- lag.abp(abp.step.signal, lag)
+  columns <- sum(unlist(lag)) + 1
+  
+  for (indice in 1:nrow(lag.abp.step)){
+    step.response <- predict(model, lag.abp.step[indice,1:columns])
+    response.ARX.model[indice] <- round(step.response,4)
+    #
+    if(lag[["CBFV"]]>1){
+      for(b in lag[["CBFV"]]:2){
+        var.name.old <- paste0("CBFV.lag",b)
+        var.name.new <- paste0("CBFV.lag",b-1)
+        lag.abp.step[indice+1,var.name.old] <- lag.abp.step[indice,var.name.new]
+      }
+      lag.abp.step[indice+1,"CBFV.lag1"] <- round(step.response,4)
+    }else{
+      var.name <- "CBFV.lag1"
+      lag.abp.step[indice+1,var.name] <- round(step.response,4)
+    }
+  }
+  #
+  #
+  start <- max(unlist(lag)) +1
+  y <-  y[start:length(y$CBFV),1]
+  pred <- response.ARX.model
+  pred <- round(pred, 3)
+  test.cor.step <<- cor(response.ARX.model,y)
+  print(test.cor.step)
+  ts = 0.6
+  before.drop = 10.2 #seconds
+  step.duration = 42 #seconds
+  step.length = step.duration/ts
+  #fin = 300*time.sample
+  half.step = floor(length(inverse.step[,1])/2)
+  ajuste = pred[half.step] - 0.8
+  
+  pred <- pred[(half.step-before.drop/ts):(half.step-before.drop/ts+step.length)]-ajuste
+  
+  time <- seq(1,length(pred),0.6)
+  pred<-pred-ajuste
+  df <- data.frame(pred,time[1:length(pred)])
+  #colnames(df) <- c("VFSC estimado (cm/seg)","Tiempo (seg)")
+  title <- paste('Step response subject: ',name.subject)
+  plot<-ggplot(df, aes(x = time.1.length.pred.., y = pred)) +
+    geom_line() +
+    xlab("Tiempo (seg)") + ylab("VFSC estimado (cm/seg)") +
+    ggtitle(title) 
+  print(plot)
+  ggsave(paste('C:/Users/Feffyta/Documents/Universidad/tesis/Programas/Entrenamiento en R/Modelamiento-univariado-NARX/Results/Univariado/NARX/stepResponse_',name.subject,'.jpg'), width = 8,height = 7)
+  
+  
+}
+
+make.inverseStep <- function(
+  lag
+){
+  ts = 0.6 #time sample
+  length.step = 150/ts #largo del escalon inverso
+  inverse.step.unos <- matrix(1,floor(length.step/2),1) #parte de 1's del escalon
+  inverse.step.ceros <- matrix(0,floor(length.step/2),1) #parte de 0's del escalon
+  inverse.step <- rbind(inverse.step.unos,inverse.step.ceros) #escalon inverso 
+  butter.filter <- butter(2,0.3)
+  inverse.step <- filter(butter.filter,inverse.step)
+  inverse.step = data.frame(inverse.step)
+  
+  
+  
+  
+  inverse.step <- cbind(inverse.step,matrix(0,length.step,1))
+  
+  colnames(inverse.step) <- c("MABP","CBFV")
+  
+  signal.step <- retardos_multi_inverseStep(inverse.step, lag)
+  
+}
 
 lag.abp <- function(
   abp.step.signal,
@@ -36,7 +128,8 @@ training <- function(
   output.var.names,
   signal.train,
   signal.test,
-  inputs
+  inputs,
+  inverse.step.lags
 )
 {
   fmla.str <- paste(inputs, collapse = " + ")
@@ -59,7 +152,8 @@ training <- function(
     signal.train,
     signal.test,
     inputs,
-    model
+    model,
+    inverse.step.lags
   )
   results <- list(models = list(model), stats = stats) 
 }
@@ -72,7 +166,8 @@ eval.model <- function(
   signal.train,
   signal.test,
   inputs,
-  model
+  model,
+  inverse.step.lags
 ){
   fitted.signal <- round(model[["fitted"]], 4)
   train.cor <- cor(fitted.signal, signal.train$folded.signal["CBFV"])
@@ -128,8 +223,10 @@ eval.model <- function(
 
   
   
-    print(test.cor)  
+  print(test.cor)  
 
+  inverse.step.result <- inverse.step.test(model,inverse.step.lags,lag)
+  
   data.frame(
     MABP = lag["MABP"],
     MABP = lag["CBFV"],
@@ -138,7 +235,8 @@ eval.model <- function(
     cost = parameter['cost'],
     train.cor = train.cor,
     test.cor = test.cor,
-    fold = fold
+    fold = fold,
+    test.cor.step = test.cor.step
   )
 }
 retardos_multi <- function(
@@ -174,6 +272,46 @@ retardos_multi <- function(
     
   }
   folded.signal <- data.frame(columns)
+  sorting <- order(lag.mat[, 1])
+  folded.signal <- folded.signal[sorting, ]
+  list(folded.signal = folded.signal, lagged.columns.names = lagged.columns.names)
+}
+
+retardos_multi_inverseStep <- function(
+  arch_entrada,
+  lags
+)
+{
+  #signal <- read.table(arch_entrada, col.names = c("MABP","CBFV") )
+  arch_entrada[['CBFV']] <- round(arch_entrada[['CBFV']],4)
+  arch_entrada[['MABP']] <- round(arch_entrada[['MABP']],4)
+  signal.uni <- data.frame(
+    MABP = arch_entrada[['MABP']],
+    CBFV = arch_entrada[['CBFV']]
+  )  
+  max.lag <- max(unlist(lags)) + 1
+  indices <- 1:nrow(signal.uni)
+  lag.mat <- embed(indices, max.lag)
+  
+  col.names <- list("MABP","CBFV")
+  columns <- NULL
+  lagged.columns.names <- c()
+  for(colname in col.names){
+    
+    lag.order <- lags[[colname]]
+    columns[[colname]] <- signal.uni[lag.mat[, 1], colname]
+    if(!is.null(lag.order) && lag.order > 0)
+      for(i in 1:lag.order){
+        new.colname <- paste(colname, paste0("lag", i), sep = ".")
+        lagged.columns.names <- c(lagged.columns.names, new.colname)
+        columns[[new.colname]] <- signal.uni[lag.mat[, i+1], colname]
+      }
+    
+    
+    
+  }
+  folded.signal <- data.frame(columns)
+  
   sorting <- order(lag.mat[, 1])
   folded.signal <- folded.signal[sorting, ]
   list(folded.signal = folded.signal, lagged.columns.names = lagged.columns.names)
@@ -216,13 +354,13 @@ get.results <- function(
   
   
   inputs <- c(signal.train[["lagged.columns.names"]],input.var.names)
-
-  output = apply(parameter, 1,function(p) training(p,lag,fold,input.var.names,output.var.names,signal.train,signal.test,inputs))
+  inverse.step.lags <- make.inverseStep(lag) #obtiene la matriz de retrasos a partir del escalon inverso
+  output = apply(parameter, 1,function(p) training(p,lag,fold,input.var.names,output.var.names,signal.train,signal.test,inputs,inverse.step.lags))
   
   models <- sapply(output, function(l) l[[1]])
   stats.list <- lapply(output, function(l) l[[2]])
   stats <- do.call(rbind, stats.list)
-  colnames(stats) <- c("MABP","CBFV","gamma","nu","cost","train.cor","test.cor","fold")
+  colnames(stats) <- c("MABP","CBFV","gamma","nu","cost","train.cor","test.cor","fold","test.cor.step")
   
   i <- order(
     -stats["test.cor"]

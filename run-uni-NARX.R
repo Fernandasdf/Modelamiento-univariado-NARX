@@ -9,6 +9,8 @@ source(PARALLEL.SCRIPT.NAME)
 
 library(doParallel)
 library(e1071)
+library(ggplot2)
+library(signal)
 
 
 process.parallel <- function(
@@ -35,7 +37,7 @@ process.parallel <- function(
     .packages = export.packages,
     .errorhandling = "pass",
     .verbose = FALSE
-  ) %dopar%
+  ) %do%
     get.results(
       parametros,
       lags = lag.list,
@@ -63,11 +65,37 @@ process.parallel <- function(
 run <- function(
   nworkers = detectCores(),
   src.basenames = c(
+                    'AITK',
+                    'ALI0',
                     'BOAM',
                     'BUTL',
+                    'COWL',
+                    'DANE',
+                    'DENI',
+                    'GREG',
+                    'GROO',
+                    'HAGG',
+                    'HAST',
                     'HEPP',
+                    'HIGH',
+                    'JEET',
+                    'JONE',
                     'KENT',
-                    'KNOW'
+                    'KHAN',
+                    'KNOW',
+                    'MCDO',
+                    'MORR',
+                    'NOBL',
+                    'NOLA',
+                    'PARK',
+                    'PATI',
+                    'PERK',
+                    'PERR',
+                    'PULL',
+                    'RANS',
+                    'RICH',
+                    'SLAC',
+                    'STAN'
                   ),
   src.ext = "txt",
   tgt.ext = "RData",
@@ -81,17 +109,17 @@ run <- function(
   tgt.dir <- file.path(script.dir, results.folder,type.folder,model.folder)
   dir.create(tgt.dir, showWarnings = FALSE, recursive = TRUE)
 
-  sigma <- 2^seq(-1, 5, 1)
-  gamma <- 1 / (2*sigma ^ 2)
-  cost <- 2^seq(0, 10000, 1)
-  nu <- seq(0.1, 0.9, 0.1)
-  lags <- list(MABP = 3:8,CBFV = 1:4,fold = 1:2)
+  #sigma <- 2^seq(-1, 5, 1)
+  #gamma <- 1 / (2*sigma ^ 2)
+  #cost <- 2^seq(0, 10000, 1)
+  #nu <- seq(0.1, 0.9, 0.1)
+  #lags <- list(MABP = 3:8,CBFV = 1:4,fold = 1:2)
   
-  parametros <- list(
-                  gamma = gamma,
-                  nu = nu,
-                  cost = cost
-                )
+ # parametros <- list(
+#                  gamma = gamma,
+#                  nu = nu,
+#                  cost = cost
+#                )
   
   export.names <- c(
     'get.results',
@@ -107,19 +135,38 @@ run <- function(
   registerDoParallel(cluster)
   start1.time <- Sys.time()
   for (src.basename in src.basenames) {
+    name.subject <<- src.basename
+    datos =read.table(paste("C:\\Users\\Feffyta\\Documents\\Universidad\\tesis\\Programas\\Entrenamiento en R\\Modelamiento-univariado-NARX\\Parametros Ruz\\",src.basename,".txt",sep=""),header = T, sep=" ")
     cat("instance ", src.basename, "\n")
-    process.parallel(
-      src.dir = src.dir,
-      tgt.dir = tgt.dir,
-      src.ext = src.ext,
-      tgt.ext = tgt.ext,
-      parametros = parametros,
-      lags = lags,
-      keep.nstats = 500,
-      src.basename = src.basename,
-      export.names = export.names,
-      export.packages = export.packages
-    )
+    for (i in seq(1,1,1)){
+      best.model.number <<- i
+      cost = datos[i,"cost"]
+      if(cost == 'Inf'){
+        cost = 10000
+      }
+      nu = datos[i,"nu"]
+      gamma = datos[i,"gamma"]
+      gamma = 1/(2*gamma^2)
+      lags <- list(MABP = datos[i,"MABP"],CBFV = datos[i,"CBFV"],fold = datos[i,"fold"])
+      parametros <- list(
+        gamma = gamma,
+        nu = nu,
+        cost = cost
+      )
+      
+      process.parallel(
+        src.dir = src.dir,
+        tgt.dir = tgt.dir,
+        src.ext = src.ext,
+        tgt.ext = tgt.ext,
+        parametros = parametros,
+        lags = lags,
+        keep.nstats = 500,
+        src.basename = src.basename,
+        export.names = export.names,
+        export.packages = export.packages
+      )  
+    }
   }
   end1.time <-Sys.time()
   print(end1.time-start1.time)
