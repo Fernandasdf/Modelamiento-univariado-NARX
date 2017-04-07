@@ -1,0 +1,15 @@
+#!/bin/sh
+#SBATCH --job-name=NARX
+#SBATCH --mail-type=ALL
+#SBATCH -p slims
+#SBATCH --mail-user=maria.lobos@usach.cl
+#SBATCH -n 20
+#SBATCH --ntasks-per-node=20
+#SBATCH --output=basic_r_job.out
+#SBATCH --error=basic_r_job.err
+
+
+
+module load R/3.2.0
+R CMD BATCH  uniNARX.r
+
